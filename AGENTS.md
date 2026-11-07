@@ -44,6 +44,8 @@
 
 ### 数据层
 - **Codex JSONL 是累计值**：`total_token_usage` 记的是累计，必须取相邻两条的差值；用 `last_token_usage` 会因每轮重复出现而翻倍。
+- **codex 新版有 cache_write**：0.166+ 的 `total_token_usage` 已带 `cache_write_input_tokens`，别按老口径硬编码 0；`payload.info` 可为 null，判空再用。
+- **增量扫描器跨行状态只在首行初始化**：回调里的 `fresh/reset` 是"整轮是否重扫"的常量，不是"首行"标志——按行清零状态会把差分算成全量累计（实测多算 37 倍，对拍当场揪出）。
 - **模型名分裂**：`zai-org/GLM-5.2` 和 `glm-5.2` 要归一成同一个——取 `/` 末段 + 小写。
 - **zcode live DB 并发**：优先只读直连 live DB（WAL 模式可与运行中的 Agent 共存），失败才回退快照复制；不要一上来就 copyfile（EBUSY）。
 - **各家 input 口径不一致**：见上面"架构约束"第 4 条。Anthropic 的 input 不含缓存；OpenAI Responses / Gemini 的 `promptTokenCount` 含。

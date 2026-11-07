@@ -6,10 +6,24 @@
 //! - request_id 在采集器内唯一，upsert 幂等（重扫整行覆盖）
 //! - sessions 台账同步 upsert（first_ts/last_ts 取 min/max）
 
+pub mod claude;
+pub mod codex;
+pub mod jsonl;
+pub mod opencode;
 pub mod zcode;
 
 use crate::models::UsageEntry;
 use rusqlite::{params, Connection};
+
+/// 全量扫描：跑所有采集器，逐个入账。单个采集器失败不影响其他。
+pub fn scan_all(conn: &mut Connection) -> Vec<AdapterScanResult> {
+    vec![
+        zcode::scan(conn),
+        claude::scan(conn),
+        codex::scan(conn),
+        opencode::scan(conn),
+    ]
+}
 
 /// 单采集器一次扫描的结果报告。
 #[derive(Debug, Default, Clone, serde::Serialize)]
