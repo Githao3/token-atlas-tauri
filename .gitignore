@@ -1,0 +1,23 @@
+# 参考仓库：外部代码，绝不入库（见 AGENTS.md）
+sources/
+
+# Node / 前端
+node_modules/
+dist/
+*.local
+coverage/
+
+# Rust / Tauri 构建产物
+target/
+
+# 本地数据与密钥
+.env
+.env.*
+*.db
+*.db-wal
+*.db-shm
+
+# 系统与编辑器杂物
+.DS_Store
+Thumbs.db
+*.log
