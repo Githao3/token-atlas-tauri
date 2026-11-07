@@ -1,6 +1,7 @@
 pub mod collect;
 pub mod db;
 pub mod models;
+pub mod pricing;
 
 
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
