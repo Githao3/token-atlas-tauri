@@ -47,6 +47,8 @@
 - **模型名分裂**：`zai-org/GLM-5.2` 和 `glm-5.2` 要归一成同一个——取 `/` 末段 + 小写。
 - **zcode live DB 并发**：优先只读直连 live DB（WAL 模式可与运行中的 Agent 共存），失败才回退快照复制；不要一上来就 copyfile（EBUSY）。
 - **各家 input 口径不一致**：见上面"架构约束"第 4 条。Anthropic 的 input 不含缓存；OpenAI Responses / Gemini 的 `promptTokenCount` 含。
+- **zcode 的 input 实测含缓存**：`computed_total_tokens = input_tokens + output_tokens` 在 live DB 全表成立（2026-11-08），即 cacheRead ⊆ input，语义 = Total。fresh 要做减法：`input − cacheRead − cacheWrite`。
+- **zcode schema 会演化**：`model_usage` 已有 `logical_request_id`（全表唯一，当 request 主键）、`status`、`raw_usage_json` 等列，且整表会被裁剪（7057→2143 行实测过两次）。别按原版写作时的列集硬编码，扫之前 PRAGMA table_info 校验一遍。`turn_usage` 表是按 turn 的粗汇总，没有模型拆分，明细要用 `model_usage`。
 
 ### 前端
 - **echarts-gl 不可用**：CSP `script-src 'self'` 下它无条件 `new Function()` 构造 EffectCompositor，直接崩且无法通过 option 关闭。3D 一律 three.js（着色器走 WebGL 编译），不给 CSP 开 `unsafe-eval`。

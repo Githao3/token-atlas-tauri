@@ -14,7 +14,7 @@
 - [x] `rust-toolchain.toml` 钉 Rust 版本
 
 ### M1 — 数据层（Rust 侧，重构的核心）
-- [ ] 账本 schema：明细表（含 `input_token_semantics` 枚举列）+ 日汇总表 + 文件游标表 + 去重台账 + `model_pricing` 表
+- [x] 账本 schema：明细表（含 `input_token_semantics` 枚举列）+ 日汇总表 + 文件游标表 + 去重台账（`model_pricing` 不进 DB，改为 Rust 模块 + JSON 覆盖文件，见决策日志 2026-11-08 计价条目）
 - [ ] 4 个采集器：zcode / claude / codex / opencode（口径对照 `sources/` 原版的 `electron/adapters/`）
 - [ ] 增量扫描器：游标（mtime + 字节偏移 + 尾部指纹），seek 只读新增
 - [ ] 计价模块：内置规则 + 用户可编辑（对齐原版 `~/.token-atlas/pricing.json` 的行为）
@@ -47,6 +47,9 @@
 - **2026-11-08 参考仓库隔离**：两个参考仓库放 `sources/`，不入库、不改它们的内容。
 - **2026-11-08 身份与图标沿用原版**：identifier `com.tokenatlas.app`、productName "Token Atlas"，图标从原版 ICO 重生成，保持产品观感延续。
 - **2026-11-08 CSP 暂为模板默认（null）**：M2 移植前端时收紧为 `script-src 'self'`（原版口径，echarts-gl 的坑就是它暴露的），届时必须同步验证 dev 模式下 Vite HMR 不被 CSP 拦。
+- **2026-11-08 成本不入库、查询时现算**：原版每次扫描都按当前价目表重算全部成本（用户改 pricing.json 立即作用于历史），账本存成本会冻结旧价。因此明细表不设 cost 列，聚合时按 model × tokens × 规则现算；M1 清单里的 `model_pricing` 表随之取消——价目 = Rust 模块内置规则 + `~/.token-atlas/pricing.json` 覆盖（与原版同格式同路径）。
+- **2026-11-08 明细表双轨存 input**：既存源的原始 `input_tokens` + 语义枚举（语义判错时可重归一，数据不毁），也存归一后的 `fresh_input_tokens`（四桶不变量直接成立，查询不用跑 CASE）。归一逻辑 = 原版 `splitTokens` 移植（显式声明 > 无缓存平凡 > 权威总数对账 > 启发式，drift 全部吸收回 fresh）。
+- **2026-11-08 会话台账独立成表**：session 是高基数维度进不了日汇总，单独建 `sessions` 表（first_ts/last_ts/project），明细被 rollup 清理后"范围内活跃会话数"仍可回答。日汇总主键带 project 维度（day×adapter×model×project），保证热力图/趋势/模型/项目/适配器五个聚合在剪枝后都完整。
 
 ## 已完成
 
@@ -55,6 +58,9 @@
 - 2026-11-08 建立本文档与 `AGENTS.md`。
 - 2026-11-08 初始化 git 仓库（main 分支），创建远端 GitHub 仓库 `Githao3/token-atlas-tauri`（public，与原版 `token-atlas` 一致；原版仓库名已被 Electron 版占用）。
 - 2026-11-08 **M0 完成**：create-tauri-app（react-ts 模板）生成骨架并入位。版本：Tauri CLI 2.12.4 / Vite 8.3.6（rolldown 内核，传递依赖少是正常的）/ React 19.3.1 / TS 6.0.3 / Rust 1.94.1。沿用原版身份 `com.tokenatlas.app` + productName "Token Atlas"，窗口 1280×800（min 960×600）。图标：从原版 `resources/icon.ico` 抽出 256px PNG，`tauri icon` 重生成全套（源图留档 `src-tauri/icons/icon-source.png`，Android/iOS 产物已删）。`tauri dev` 首次 cargo 全量编译 2m08s，窗口截图验收通过（WebView2 正常渲染 Vite 页）。
+- 2026-11-08 **M1 调研完成**：cc-switch 数据层（四表结构/游标/rollup/语义枚举/台账）与原版四采集器口径全部摸清，要点：① 原版四桶不变量靠 splitTokens 对账吸收（drift 塞回 freshInput）；② claude 显式 input 不含缓存，codex 按文件差分累计值（`Math.max(0,…)` 防回退），zcode/opencode 靠权威总数自动判定；③ zcode/opencode 主路径是 SQLite 只读直连（Windows 下 copyfile 会 EBUSY），JSONL 仅回退；④ 原版无跨文件 fork 去重（cc-switch 台账补这个位）。
+- 2026-11-08 **本机 zcode 数据实测**：`~/.zcode/cli/db/db.sqlite`（WAL，321MB）`model_usage` 表 2143 行。**input 含缓存实锤**：`computed_total = input + output` 在 2126/2126 行全部成立 → zcode 语义 = Total(1)，fresh = input − cacheRead − cacheWrite。schema 较原版写作时已演化：新增 `logical_request_id`（全表唯一，天然 request 主键）、`status`（2125 completed / 16 cancelled / 3 error）、`raw_usage_json`（权威原始用量）；新增 `turn_usage` 表但是按 turn 的粗汇总（无模型拆分），不用它。历史裁剪仍在发生（此前 7057 行 → 现 2143 行），账本必要性再次确认。原版口径不过滤 status（cancelled 也烧了 token），沿用。
+- 2026-11-08 **M1.1 完成**：账本 schema 落地（`usage_entries` 明细 / `usage_daily` 日汇总 / `sessions` 会话台账 / `file_cursors` 游标 / `dedup_ledger` 去重台账 / `meta`），`db.rs` 打开+WAL+迁移（user_version 驱动），`models.rs` 四桶归一 + 语义枚举 + 模型名/项目归一。12 个单测全过（含 zcode 实测形态、claude 互斥、OpenAI total、drift 吸收、钳零不变量等口径用例）。库路径定 `~/.token-atlas/ledger.db`。
 
 ## 障碍 / 进行中
 
