@@ -62,6 +62,11 @@
   ```
   `gh`（api.github.com）有时能通但 `git push`（github.com:443）不通，两者分开。
 - 默认 shell 是 PowerShell 7。
+- **npm 直连 registry 慢**：实测 `npm install` 直连要 5 分钟以上（能通，只是慢）；急就挂代理：
+  ```bash
+  npm install --proxy http://127.0.0.1:7897 --https-proxy http://127.0.0.1:7897
+  ```
+  cargo（crates.io）直连正常，不用挂。
 - `sources/` 里的两个外部仓库**绝不进版本控制**，`.gitignore` 必须排除；`node_modules/`、`target/`、`dist/` 同理。
 - Tauri 构建需要的 Rust 工具链以 `rust-toolchain.toml` 钉住版本。
 

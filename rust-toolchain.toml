@@ -1,0 +1,5 @@
+# 钉住 Rust 工具链版本，保证构建可复现（见 AGENTS.md「构建与环境」）
+[toolchain]
+channel = "1.94.1"
+profile = "minimal"
+components = ["rustfmt", "clippy"]

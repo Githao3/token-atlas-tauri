@@ -9,9 +9,9 @@
 ## 里程碑
 
 ### M0 — 脚手架
-- [ ] Tauri 2 + Vite + React + TS 骨架，`tauri dev` 跑通出窗口
+- [x] Tauri 2 + Vite + React + TS 骨架，`tauri dev` 跑通出窗口
 - [x] `.gitignore`：`target/` `node_modules/` `dist/` **`sources/`**
-- [ ] `rust-toolchain.toml` 钉 Rust 版本
+- [x] `rust-toolchain.toml` 钉 Rust 版本
 
 ### M1 — 数据层（Rust 侧，重构的核心）
 - [ ] 账本 schema：明细表（含 `input_token_semantics` 枚举列）+ 日汇总表 + 文件游标表 + 去重台账 + `model_pricing` 表
@@ -45,6 +45,8 @@
 - **2026-11-08 数据层设计以 cc-switch 为蓝本**：自建账本、SyncCursor 增量、每日 rollup、`input_token_semantics` 枚举、去重台账。参考实现可直接读 `sources/cc-switch`（MIT）。
 - **2026-11-08 可视化沿用原版**：ECharts + three.js，几何与图表逻辑从 `sources/` 原版移植。
 - **2026-11-08 参考仓库隔离**：两个参考仓库放 `sources/`，不入库、不改它们的内容。
+- **2026-11-08 身份与图标沿用原版**：identifier `com.tokenatlas.app`、productName "Token Atlas"，图标从原版 ICO 重生成，保持产品观感延续。
+- **2026-11-08 CSP 暂为模板默认（null）**：M2 移植前端时收紧为 `script-src 'self'`（原版口径，echarts-gl 的坑就是它暴露的），届时必须同步验证 dev 模式下 Vite HMR 不被 CSP 拦。
 
 ## 已完成
 
@@ -52,6 +54,7 @@
 - 2026-11-08 实测 Electron 版资源占用：内存稳定 ~383MB、空闲 CPU ~0%、最小化归零、解压后 353MB —— 重构动机成立。
 - 2026-11-08 建立本文档与 `AGENTS.md`。
 - 2026-11-08 初始化 git 仓库（main 分支），创建远端 GitHub 仓库 `Githao3/token-atlas-tauri`（public，与原版 `token-atlas` 一致；原版仓库名已被 Electron 版占用）。
+- 2026-11-08 **M0 完成**：create-tauri-app（react-ts 模板）生成骨架并入位。版本：Tauri CLI 2.12.4 / Vite 8.3.6（rolldown 内核，传递依赖少是正常的）/ React 19.3.1 / TS 6.0.3 / Rust 1.94.1。沿用原版身份 `com.tokenatlas.app` + productName "Token Atlas"，窗口 1280×800（min 960×600）。图标：从原版 `resources/icon.ico` 抽出 256px PNG，`tauri icon` 重生成全套（源图留档 `src-tauri/icons/icon-source.png`，Android/iOS 产物已删）。`tauri dev` 首次 cargo 全量编译 2m08s，窗口截图验收通过（WebView2 正常渲染 Vite 页）。
 
 ## 障碍 / 进行中
 
