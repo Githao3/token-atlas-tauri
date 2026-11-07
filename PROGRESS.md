@@ -61,6 +61,7 @@
 - 2026-11-08 **M1 调研完成**：cc-switch 数据层（四表结构/游标/rollup/语义枚举/台账）与原版四采集器口径全部摸清，要点：① 原版四桶不变量靠 splitTokens 对账吸收（drift 塞回 freshInput）；② claude 显式 input 不含缓存，codex 按文件差分累计值（`Math.max(0,…)` 防回退），zcode/opencode 靠权威总数自动判定；③ zcode/opencode 主路径是 SQLite 只读直连（Windows 下 copyfile 会 EBUSY），JSONL 仅回退；④ 原版无跨文件 fork 去重（cc-switch 台账补这个位）。
 - 2026-11-08 **本机 zcode 数据实测**：`~/.zcode/cli/db/db.sqlite`（WAL，321MB）`model_usage` 表 2143 行。**input 含缓存实锤**：`computed_total = input + output` 在 2126/2126 行全部成立 → zcode 语义 = Total(1)，fresh = input − cacheRead − cacheWrite。schema 较原版写作时已演化：新增 `logical_request_id`（全表唯一，天然 request 主键）、`status`（2125 completed / 16 cancelled / 3 error）、`raw_usage_json`（权威原始用量）；新增 `turn_usage` 表但是按 turn 的粗汇总（无模型拆分），不用它。历史裁剪仍在发生（此前 7057 行 → 现 2143 行），账本必要性再次确认。原版口径不过滤 status（cancelled 也烧了 token），沿用。
 - 2026-11-08 **M1.1 完成**：账本 schema 落地（`usage_entries` 明细 / `usage_daily` 日汇总 / `sessions` 会话台账 / `file_cursors` 游标 / `dedup_ledger` 去重台账 / `meta`），`db.rs` 打开+WAL+迁移（user_version 驱动），`models.rs` 四桶归一 + 语义枚举 + 模型名/项目归一。12 个单测全过（含 zcode 实测形态、claude 互斥、OpenAI total、drift 吸收、钳零不变量等口径用例）。库路径定 `~/.token-atlas/ledger.db`。
+- 2026-11-08 **M1.2 完成**：zcode 采集器落地（`collect/zcode.rs` 只读直连 live DB → `model_usage` 全表 → 四桶归一 → 幂等 upsert，明细 + 会话台账同事务提交；request_id 取 `COALESCE(logical_request_id, span_id, assistant_message_id, 合成键)`）。**实机对拍通过**：账本 2148 行 vs node 源库快照 2147 行，差额恰好是两次查询之间本对话新产生的一条请求（938 fresh + 166272 cacheRead + 82 output = 167292 total，四桶精确吻合）；会话数 24 = 源库 25 个去重会话减 1 个全零用量会话（被原版口径过滤）。live 测试 `cargo test -- --ignored --nocapture live_zcode_scan`。
 
 ## 障碍 / 进行中
 
