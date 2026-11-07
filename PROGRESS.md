@@ -18,8 +18,8 @@
 - [ ] 4 个采集器：zcode / claude / codex / opencode（口径对照 `sources/` 原版的 `electron/adapters/`）
 - [ ] 增量扫描器：游标（mtime + 字节偏移 + 尾部指纹），seek 只读新增
 - [ ] 计价模块：内置规则 + 用户可编辑（对齐原版 `~/.token-atlas/pricing.json` 的行为）
-- [ ] 汇总聚合：输出形状对齐原版 `Dashboard` 类型（`src/shared/types.ts`），让 UI 层零改动迁移
-- [ ] 对拍验证：与原版 `npm run scan:test` 在同一批源数据上出数一致
+- [x] 汇总聚合：输出形状对齐原版 `Dashboard` 类型（`src/shared/types.ts`），让 UI 层零改动迁移
+- [x] 对拍验证：与原版 `npm run scan:test` 在同一批源数据上出数一致（差异全部定位并归因，见已完成区 M1.6）
 
 ### M2 — 壳与 IPC
 - [ ] 三页导航布局 + 深色/浅色主题 + 中英 i18n（移植 `src/App.tsx` / `lib/i18n.tsx` / `styles/`）
@@ -64,6 +64,14 @@
 - 2026-11-08 **M1.2 完成**：zcode 采集器落地（`collect/zcode.rs` 只读直连 live DB → `model_usage` 全表 → 四桶归一 → 幂等 upsert，明细 + 会话台账同事务提交；request_id 取 `COALESCE(logical_request_id, span_id, assistant_message_id, 合成键)`）。**实机对拍通过**：账本 2148 行 vs node 源库快照 2147 行，差额恰好是两次查询之间本对话新产生的一条请求（938 fresh + 166272 cacheRead + 82 output = 167292 total，四桶精确吻合）；会话数 24 = 源库 25 个去重会话减 1 个全零用量会话（被原版口径过滤）。live 测试 `cargo test -- --ignored --nocapture live_zcode_scan`。
 - 2026-11-08 **M1.3 完成**：JSONL 增量扫描器（`collect/jsonl.rs`：mtime 门 → 字节偏移 seek → 尾部指纹识别同尺寸重写/截断 → 半行不推进，6 个单测覆盖首扫/续读/跳过/重写/截断/半行补全）+ claude/codex/opencode 三采集器，`scan_all()` 汇总入口。**四采集器全部实机对拍精确一致**（claude 134 行 / codex 258 行 / opencode 7058 行，与 node 严格镜像脚本七项指标全等）。要点：① claude 全局按 message.id 去重——原版会把流式重复行（usage 完全相同，本机 22 个 id）双计，这是有意升级，对拍时 claude 数字比原版略低；② codex 新版（0.166+）`total_token_usage` 已有 `cache_write_input_tokens`，按差分映射（原版硬编码 0）；累计值累加器跨扫描持久化在游标 parser_state；③ fork/重写防重：`{session_id}:{ordinal}` 作 request_id + 事件语义哈希入 dedup_ledger，回放事件不重复计数；④ opencode 语义混合分布（141 行 Total / 6917 行 Fresh）实证了逐行存语义枚举的必要性。
 - 2026-11-08 **踩坑：`fresh` 标志不是"首行"标志**。codex 采集器初版在闭包里写 `if fresh { state = default }`，而 `fresh` 是整轮常量（本轮是否重扫），导致首轮扫描**每行都清零累计值累加器**，每条事件按全量累计值差分，总量多算 ~37 倍（26.9M → 997M）。对拍脚本当场揪出。修复：状态默认归零，仅首行且为续读时从 parser_state 恢复。教训：**增量扫描器的跨行状态必须只在首行初始化一次，回调参数语义要写清楚**。
+- 2026-11-08 **M1.5 完成**：`rollup.rs`（本地午夜对齐 cutoff + LEFT JOIN 合并聚合 + 同事务剪枝，retain 默认 365 天，meta 可覆盖）+ `dashboard.rs`（输出形状对齐原版 `Dashboard` 全部字段，serde camelCase）。要点：① detail ⊕ rollup 按天互斥，查询合并时部分覆盖的边界天只信 detail（cc-switch 同款收窄），空区间三态显式区分（all=全量 / 收窄为空=不取 / 有界=闭区间）；② 日级成本按 (day, model) 分桶精确计算；③ 会话数剪枝后退回 `sessions` 台账重叠估算；④ 成本不入库、按当前价目表现算（见决策日志）。测试 36 个全过：统计/成本/热力图/趋势/项目/适配器 + rollup 前后 'all' 全维度守恒 + 整天边界可用性 + 部分天收窄。
+- 2026-11-08 **M1.6 完成，对拍闭环**。原版 `scan:test`（npx esbuild 打包后 node 直跑，等效官方入口）vs 重构版全链路（真实账本库 `~/.token-atlas/ledger.db`）：
+  - **codex 精确一致**（26,987,598 / 258 行）；
+  - **zcode 一致**（差异 = 两次扫描之间本对话新增的请求，live 移动目标）；
+  - **claude 重构版低 2.0M**（原版 163 行 → 重构 134 行）：原版把流式重复行双计，重构按 message.id 全局去重——**有意升级**；
+  - **opencode 差 772,243，定位到 170 行源数据自相矛盾**（kimi 经 `agent` provider：`total=3226 < cacheRead=9472`）：原版记下不可能的 total（打破自己的不变量），重构版钳零回退四桶和（守住不变量）——**有原则的口径分歧，重构版正确**；
+  - Dashboard 层 activeDays/streak/热力图窗口/pricing 未匹配清单/usingOverrides 全部一致。
+  - 结论：**所有差异均归因完毕，无未解释偏差**。M1 数据层（重构核心）全部完成。
 
 ## 障碍 / 进行中
 

@@ -171,3 +171,63 @@ mod tests {
         assert_eq!(project.as_deref(), Some("p"));
     }
 }
+
+#[cfg(test)]
+mod live_pipeline_tests {
+    use super::scan_all;
+
+    /// 全链路实机验证：真实账本库 + 全采集器 + Dashboard。
+    /// 运行：cargo test -- --ignored --nocapture live_full_pipeline
+    #[test]
+    #[ignore = "实机测试：写入 ~/.token-atlas/ledger.db 并读取本机各 Agent 数据"]
+    fn live_full_pipeline() {
+        let mut conn = crate::db::open_default().expect("打开真实账本库失败");
+        let results = scan_all(&mut conn);
+        for r in &results {
+            println!("{r:?}");
+        }
+        assert!(results.iter().all(|r| r.available), "四采集器都应可用");
+
+        let pricing = crate::pricing::Pricing::load();
+        let now = crate::collect::jsonl::now_ms();
+        let d_all = crate::dashboard::build_dashboard(&conn, None, now, &pricing).unwrap();
+        println!("\n=== Dashboard (all) ===");
+        println!(
+            "totalTokens={} totalCost=${:.4} sessions={} messages={} activeDays={} streak={}",
+            d_all.stats.total_tokens, d_all.stats.total_cost, d_all.stats.sessions,
+            d_all.stats.messages, d_all.stats.active_days, d_all.stats.current_streak
+        );
+        println!(
+            "cache: hitRate={:.1}% saved=${:.4}",
+            d_all.cache.hit_rate * 100.0, d_all.cache.saved
+        );
+        println!("models:");
+        for m in d_all.models.iter().take(8) {
+            println!(
+                "  {:<28} total={:>12} share={:>5.1}% cost=${:.4} fallback={}",
+                m.model, m.total, m.share * 100.0, m.cost, m.pricing_fallback
+            );
+        }
+        println!("adapters:");
+        for a in &d_all.adapters {
+            println!(
+                "  {:<10} available={:<5} total={:>12} sessions={:>5} msgs={:>6}",
+                a.adapter, a.available, a.total, a.sessions, a.messages
+            );
+        }
+        println!("unmatched: {:?}", d_all.pricing.unmatched_models);
+        println!("heatmap cells={} heatStart={} heatEnd={}", d_all.heatmap.len(), d_all.heat_start, d_all.heat_end);
+        println!("trend points={} perDay points={} projects={}", d_all.trend.len(), d_all.per_day.len(), d_all.projects.len());
+
+        // 不变量：全表四桶之和 == total
+        let bad: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM usage_entries
+                 WHERE fresh_input_tokens + cache_read_tokens + cache_write_tokens + output_tokens != total_tokens",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(bad, 0, "四桶不变量必须全表成立");
+    }
+}
